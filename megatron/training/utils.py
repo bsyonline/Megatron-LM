@@ -453,11 +453,13 @@ def get_batch_on_this_tp_rank(data_iterator):
 
     if mpu.get_tensor_model_parallel_rank() == 0:
 
+        #获取数据
        if data_iterator is not None:
            data = next(data_iterator)
        else:
            data = None
 
+       #将数据转换为cuda格式
        batch = {
            'tokens': data["tokens"].cuda(non_blocking = True),
            'labels': data["labels"].cuda(non_blocking = True),
@@ -466,6 +468,7 @@ def get_batch_on_this_tp_rank(data_iterator):
            'position_ids': data["position_ids"].cuda(non_blocking = True)
        }
 
+       #根据流水线并行配置接收相应的数据
        if args.pipeline_model_parallel_size == 1:
            _broadcast(batch['tokens'])
            _broadcast(batch['labels'])
@@ -484,7 +487,7 @@ def get_batch_on_this_tp_rank(data_iterator):
            _broadcast(batch['attention_mask'])
 
     else:
-
+        # 创建空tensor接收数据
        tokens=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
        labels=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
        loss_mask=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.float32 , device = torch.cuda.current_device())
@@ -496,6 +499,7 @@ def get_batch_on_this_tp_rank(data_iterator):
            attention_mask=None
        position_ids=torch.empty((args.micro_batch_size,args.seq_length), dtype = torch.int64 , device = torch.cuda.current_device())
 
+        #根据流水线并行配置接收相应的数据
        if args.pipeline_model_parallel_size == 1:
            _broadcast(tokens)
            _broadcast(labels)

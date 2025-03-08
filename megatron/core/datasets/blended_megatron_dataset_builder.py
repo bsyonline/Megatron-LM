@@ -129,7 +129,7 @@ class BlendedMegatronDatasetBuilder(object):
             List[Optional[TopLevelDataset]]: A list containing a dataset instance (or None) per
                 split
         """
-        datasets = self._build_blended_dataset_splits()
+        datasets = self._build_blended_dataset_splits() # 构建混合数据集
 
         for dataset in datasets:
             if dataset is not None and len(dataset) > 0:

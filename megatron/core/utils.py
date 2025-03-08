@@ -293,9 +293,11 @@ def log_single_rank(logger: logging.Logger, *args: Any, rank: int = 0, **kwargs:
         kwargs (Dict[str, Any]): All logging.Logger.log keyword arguments
     """
     if torch.distributed.is_initialized():
+        # 如果是分布式环境，则只在指定rank上打印日志
         if torch.distributed.get_rank() == rank:
             logger.log(*args, **kwargs)
     else:
+        # 如果不是分布式环境，则直接打印日志
         logger.log(*args, **kwargs)
 
 
@@ -1480,16 +1482,20 @@ def get_batch_on_this_cp_rank(batch: Dict[str, Any]):
         cp_rank = parallel_state.get_context_parallel_rank()
         for key, val in batch.items():
             if val is not None:
+                # 确定序列维度
                 seq_dim = 1 if key != 'attention_mask' else 2
+                # 重塑张量以支持分块
                 val = val.view(
                     *val.shape[0:seq_dim],
                     2 * cp_size,
                     val.shape[seq_dim] // (2 * cp_size),
                     *val.shape[(seq_dim + 1) :],
                 )
+                # 选择对应的chunks
                 index = torch.tensor(
                     [cp_rank, (2 * cp_size - cp_rank - 1)], device="cpu", pin_memory=True
                 ).cuda(non_blocking=True)
+                # 提取并重组数据
                 val = val.index_select(seq_dim, index)
                 val = val.view(*val.shape[0:seq_dim], -1, *val.shape[(seq_dim + 2) :])
                 batch[key] = val

@@ -148,9 +148,11 @@ def get_batch(data_iterator):
         return None, None, None, None, None
 
     # get batches based on the TP rank you are on
+    # 处理张量并行(TP)和流水线并行(PP)的数据分发逻辑，将数据批次分发给不同并行组中的GPU，确保每个GPU获得其所需的数据部分
     batch = get_batch_on_this_tp_rank(data_iterator)
 
     # slice batch along sequence dimension for context parallelism
+    # 将输入批次沿着序列维度切分成多个块，并分配到上下文并行组中的不同GPU上，实现负载均衡的数据分发
     batch = get_batch_on_this_cp_rank(batch)
 
     return batch.values()
@@ -239,7 +241,7 @@ def forward_step(data_iterator, model: GPTModel):
     timers('batch-generator', log_level=2).start()
     global stimer
     with stimer(bdata=True):
-        tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
+        tokens, labels, loss_mask, attention_mask, position_ids = get_batch( #获取batch数据
             data_iterator)
     timers('batch-generator').stop()
 
@@ -299,6 +301,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
     print_rank_0("> building train, validation, and test datasets for GPT ...")
 
+    # 构建数据集
     train_ds, valid_ds, test_ds = BlendedMegatronDatasetBuilder(
         dataset_type,
         train_val_test_num_samples,
@@ -317,9 +320,9 @@ if __name__ == "__main__":
     train_valid_test_datasets_provider.is_distributed = True
 
     pretrain(
-        train_valid_test_datasets_provider,
-        model_provider,
-        ModelType.encoder_or_decoder,
-        forward_step,
-        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+        train_valid_test_datasets_provider, #获取数据集
+        model_provider, #获取模型
+        ModelType.encoder_or_decoder, #获取模型类型
+        forward_step, #获取前向传播函数
+        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'}, #获取tokenizer类型
     )

@@ -92,6 +92,7 @@ class GPTDataset(MegatronDataset):
         super().__init__(
             indexed_dataset, dataset_path, indexed_indices, num_samples, index_split, config
         )
+        # 设置掩码和位置ID的缓存标志
         self.masks_and_position_ids_are_cacheable = not any(
             [
                 self.config.reset_position_ids,
@@ -99,6 +100,7 @@ class GPTDataset(MegatronDataset):
                 self.config.eod_mask_loss,
             ]
         )
+        # 初始化缓存
         self.masks_and_position_ids_are_cached = False
         self.cached_attention_mask = None
         self.cached_loss_mask = None
@@ -170,16 +172,27 @@ class GPTDataset(MegatronDataset):
             # Batch padding sequence so the index does not matter
             text, _ = self._query_document_sample_shuffle_indices(0)
         else:
+            # 正常获取数据
             text, _ = self._query_document_sample_shuffle_indices(idx)
 
+        # 转换为PyTorch张量
         text = torch.from_numpy(text).long()
+        # 处理tokens和labels
         if self.config.add_extra_token_to_sequence:
-            tokens = text[:-1].contiguous()
-            labels = text[1:].contiguous()
+            # 直接切分
+            # 原始文本：    [token1, token2, token3, token4]
+            # 输入序列：    [token1, token2, token3]        # 用于预测
+            # 标签序列：    [token2, token3, token4]        # 预测目标
+            tokens = text[:-1].contiguous() # 输入序列：去掉最后一个token
+            labels = text[1:].contiguous() # 标签序列：去掉第一个token
         else:
-            tokens = text
-            labels = torch.roll(text, shifts=-1, dims=0)
-            labels[-1] = self._pad_token_id
+            # 使用roll操作
+            # 原始文本：    [token1, token2, token3, token4]
+            # 输入序列：    [token1, token2, token3, token4]  # 用于预测
+            # 标签序列：    [token2, token3, token4, PAD]     # 预测目标
+            tokens = text # 输入序列：保持原样
+            labels = torch.roll(text, shifts=-1, dims=0) # 标签序列：向右移动一位
+            labels[-1] = self._pad_token_id # 最后一个位置用填充token
 
         if (
             not self.masks_and_position_ids_are_cacheable
@@ -204,14 +217,23 @@ class GPTDataset(MegatronDataset):
             position_ids = self.cached_position_ids
 
         # For padded sequences, mask the loss
+        # 在训练过程中，我们需要将不同长度的序列填充到相同的长度，对于填充的部分，将填充位置的损失掩码设为0，不计算损失
+        # 原始序列：    [token1, token2, token3, PAD, PAD]
+        # 标签序列：    [token2, token3, token4, PAD, PAD]
+        # 损失掩码：    [1.0,   1.0,   1.0,    0.0,  0.0]
         loss_mask[labels == self._pad_token_id] = 0.0
 
         # For padded sequences, ensure the embedding layer can map the token ID
+        # 将填充token的ID从 pad_token_id 映射到0，确保嵌入层(embedding layer)能够正确处理填充token
+        # 原始序列：    [token1, token2, PAD, PAD]
+        # 原始ID：      [101,   102,   999,  999]  # 假设pad_token_id=999
+        # 处理后ID：    [101,   102,   0,    0]    # 填充token映射为0
         tokens[tokens == self._pad_token_id] = 0
         labels[labels == self._pad_token_id] = 0
 
         # Batch padding sequence so we mask the loss
         if idx is None:
+            # 创建一个与loss_mask相同形状的全零张量
             loss_mask = torch.zeros_like(loss_mask)
 
         if self.config.create_attention_mask:
@@ -323,6 +345,7 @@ class GPTDataset(MegatronDataset):
             index, and the shuffle index
         """
         path_to_cache = self.config.path_to_cache
+        # 如果没有指定缓存路径且不是模拟数据，则使用默认路径
         if path_to_cache is None and not self.config.mock:
             path_to_cache = os.path.join(
                 self.dataset.path_prefix, "cache", f"{type(self).__name__}_indices"
@@ -331,10 +354,11 @@ class GPTDataset(MegatronDataset):
         if path_to_cache:
             base = f"{self.unique_description_hash}-{type(self).__name__}-{self.index_split.name}"
             get_path_to = lambda affix: os.path.join(path_to_cache, f"{base}-{affix}")
-            path_to_description = get_path_to("description.txt")
-            path_to_document_index = get_path_to("document_index.npy")
-            path_to_sample_index = get_path_to("sample_index.npy")
-            path_to_shuffle_index = get_path_to("shuffle_index.npy")
+            path_to_description = get_path_to("description.txt") # 数据集描述
+            path_to_document_index = get_path_to("document_index.npy") # 文档索引
+            path_to_sample_index = get_path_to("sample_index.npy") # 样本索引
+            path_to_shuffle_index = get_path_to("shuffle_index.npy") # shuffle索引
+            # 如果所有文件都存在，cache_hit = True
             cache_hit = all(
                 map(
                     os.path.isfile,
@@ -370,11 +394,14 @@ class GPTDataset(MegatronDataset):
                 separate_final_epoch = False
             else:
                 # Get the number of samples for the last epoch
+                # 计算不包含最后一个epoch的样本数量，为最后一个epoch的特殊处理做准备
                 num_samples_sans_final_epoch = (
                     (num_epochs - 1) * num_tokens_per_epoch
                     - self.config.add_extra_token_to_sequence
                 ) // sequence_length
+                # 计算最后一个epoch的样本数量
                 num_samples_from_final_epoch = self.num_samples - num_samples_sans_final_epoch
+                # 计算每个epoch的样本数量
                 num_samples_per_epoch = (
                     num_tokens_per_epoch - self.config.add_extra_token_to_sequence
                 ) // sequence_length
@@ -408,6 +435,18 @@ class GPTDataset(MegatronDataset):
             numpy_random_state = numpy.random.RandomState(self.config.random_seed)
 
             # Build the document index
+            #假设：
+            # documents = [doc1, doc2, doc3]
+            # num_epochs = 2
+            # 不需要单独处理
+            # document_index = [doc1, doc2, doc3, doc1, doc2, doc3]
+            # 随机打乱后可能是：
+            # [doc2, doc1, doc3, doc3, doc2, doc1]
+            # 需要单独处理
+            # doc_idx_first = [doc1, doc2, doc3, doc1, doc2, doc3]
+            # doc_idx_last = [doc1, doc2, doc3]
+            # 合并后：
+            # [doc1, doc2, doc3, doc1, doc2, doc3, doc1, doc2, doc3]
             document_index = _build_document_index(
                 self.indices, num_epochs, numpy_random_state, separate_final_epoch
             )
@@ -574,15 +613,23 @@ def _build_document_index(
         numpy.ndarray: The document index
     """
     if not separate_final_epoch or num_epochs == 1:
+        # 创建文档索引矩阵
         document_index = numpy.mgrid[0:num_epochs, 0 : len(documents)][1]
+        # 填充文档ID
         document_index[:] = documents
+        # 重塑为一维数组
         document_index = document_index.reshape(-1)
+        # 转换为int32类型
         document_index = document_index.astype(numpy.int32)
+        # 随机打乱
         numpy_random_state.shuffle(document_index)
         return document_index
-
+    
+    # 构建前n-1个epoch的索引
     doc_idx_first = _build_document_index(documents, num_epochs - 1, numpy_random_state, False)
+    # 构建最后一个epoch的索引
     doc_idx_last = _build_document_index(documents, 1, numpy_random_state, False)
+    # 合并两个索引
     return numpy.concatenate((doc_idx_first, doc_idx_last))
 
 
