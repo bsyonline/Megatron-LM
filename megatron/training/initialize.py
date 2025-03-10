@@ -315,6 +315,7 @@ def _initialize_distributed(get_embedding_ranks, get_position_embedding_ranks):
             'timeout': timedelta(minutes=args.distributed_timeout_minutes),
         }
 
+        # 初始化分布式环境
         torch.distributed.init_process_group(**init_process_group_kwargs)
 
     # Set the tensor model-parallel, pipeline model-parallel, and
@@ -324,21 +325,21 @@ def _initialize_distributed(get_embedding_ranks, get_position_embedding_ranks):
             print("model parallel is already initialized")
         else:
             mpu.initialize_model_parallel(
-                args.tensor_model_parallel_size,
-                args.pipeline_model_parallel_size,
-                args.virtual_pipeline_model_parallel_size,
+                args.tensor_model_parallel_size, # 张量并行大小
+                args.pipeline_model_parallel_size, # 流水线并行大小
+                args.virtual_pipeline_model_parallel_size, # 虚拟流水线并行大小
                 args.pipeline_model_parallel_split_rank,
                 pipeline_model_parallel_comm_backend=args.pipeline_model_parallel_comm_backend,
-                context_parallel_size=args.context_parallel_size,
+                context_parallel_size=args.context_parallel_size, # 上下文并行大小
                 hierarchical_context_parallel_sizes=args.hierarchical_context_parallel_sizes,
-                expert_model_parallel_size=args.expert_model_parallel_size,
+                expert_model_parallel_size=args.expert_model_parallel_size, # 专家并行大小
                 num_distributed_optimizer_instances=args.num_distributed_optimizer_instances,
-                expert_tensor_parallel_size=args.expert_tensor_parallel_size,
-                distributed_timeout_minutes=args.distributed_timeout_minutes,
-                nccl_communicator_config_path=args.nccl_communicator_config_path,
-                order='tp-cp-ep-dp-pp' if not args.use_tp_pp_dp_mapping else 'tp-cp-ep-pp-dp',
-                encoder_tensor_model_parallel_size=args.encoder_tensor_model_parallel_size,
-                encoder_pipeline_model_parallel_size=args.encoder_pipeline_model_parallel_size,
+                expert_tensor_parallel_size=args.expert_tensor_parallel_size, # 专家张量并行大小
+                distributed_timeout_minutes=args.distributed_timeout_minutes, # 分布式超时时间
+                nccl_communicator_config_path=args.nccl_communicator_config_path, # NCCL通信配置路径
+                order='tp-cp-ep-dp-pp' if not args.use_tp_pp_dp_mapping else 'tp-cp-ep-pp-dp', # 顺序
+                encoder_tensor_model_parallel_size=args.encoder_tensor_model_parallel_size, # 编码器张量并行大小
+                encoder_pipeline_model_parallel_size=args.encoder_pipeline_model_parallel_size, # 编码器流水线并行大小
                 get_embedding_ranks=get_embedding_ranks,
                 get_position_embedding_ranks=get_position_embedding_ranks,
                 create_gloo_process_groups=args.enable_gloo_process_groups,
